@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "unix_socket_directories="]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ocg_aggregator}
+      POSTGRES_USER: ${POSTGRES_USER:-ocg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-ocg} -d postgres"]
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - ./catalog/cards.json:/catalog/cards.json:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "127.0.0.1:8788:8000"
+
+volumes:
+  postgres_data:

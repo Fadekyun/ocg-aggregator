@@ -1,0 +1,43 @@
+{% extends "aggregator/base.html" %}
+{% block content %}
+<h1>Wanted list</h1>
+<form method="post">
+  {% csrf_token %}
+  <textarea name="wanted_text" rows="9" style="width:100%" placeholder="PL!N-bp5-007-N x4&#10;PL!N-bp5-007-N,4">{{ text }}</textarea>
+  <p><button>Optimize from latest scrape</button></p>
+</form>
+{% if lines %}
+<h2>Parsed lines</h2>
+<table>
+  <tr><th>Line</th><th>Qty</th><th>Card</th><th>Status</th></tr>
+  {% for line in lines %}
+  <tr>
+    <td>{{ line.code }}</td><td>{{ line.quantity }}</td>
+    <td>{% if line.card %}<a href="/cards/{{ line.card.id }}/">{{ line.card.card_number_raw }}</a>{% else %}-{% endif %}</td>
+    <td>{{ line.error|default:"Matched" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if plan %}
+<h2>Recommended plan</h2>
+{% for warning in plan.warnings %}<p class="warn">{{ warning }}</p>{% endfor %}
+{% for group in plan.groups %}
+  <h3>{{ group.shop.name }}</h3>
+  <ul>
+  {% for item in group.plan_items %}
+    <li>{{ item.line.card.card_number_raw }} x{{ item.quantity }} - ¥{{ item.offer.price_jpy }} each</li>
+  {% endfor %}
+  </ul>
+  <p>Items: ¥{{ group.items_total }} / Shipping: ¥{{ group.shipping }} / Store total: ¥{{ group.store_total }}</p>
+{% empty %}
+  <p>No buyable plan found from current offers.</p>
+{% endfor %}
+<p><strong>Grand total: ¥{{ plan.grand_total }}</strong></p>
+{% if plan.unfulfilled %}
+<h3>Unfulfilled</h3>
+<ul>{% for line in plan.unfulfilled %}<li>{{ line.code }} x{{ line.quantity }} - {{ line.error }}</li>{% endfor %}</ul>
+{% endif %}
+{% endif %}
+{% endblock %}
+

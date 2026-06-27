@@ -1,0 +1,9 @@
+Django==5.1.4
+beautifulsoup4==4.12.3
+gunicorn==23.0.0
+httpx==0.28.1
+psycopg[binary]==3.2.3
+pytest==8.3.4
+pytest-django==4.9.0
+python-dotenv==1.0.1
+

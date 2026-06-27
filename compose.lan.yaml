@@ -1,0 +1,9 @@
+# Optional LAN exposure. Use with:
+# docker compose -f compose.yaml -f compose.lan.yaml up -d
+#
+# Set ADMIN_PASSWORD and include your LAN host/IP in DJANGO_ALLOWED_HOSTS first.
+services:
+  app:
+    ports:
+      - "0.0.0.0:8788:8000"
+

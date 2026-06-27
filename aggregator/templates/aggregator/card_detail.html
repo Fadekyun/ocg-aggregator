@@ -1,0 +1,33 @@
+{% extends "aggregator/base.html" %}
+{% block content %}
+<div class="grid">
+  <div>{% if card.image_url %}<img class="card-img" src="{{ card.image_url }}" alt="">{% endif %}</div>
+  <div>
+    <h1>{{ card.card_number_raw }}</h1>
+    <p>{{ card.name_jp }}</p>
+    <p class="muted">{{ card.set_name }} / {{ card.rarity }}</p>
+  </div>
+</div>
+<h2>Offers</h2>
+<table>
+  <thead><tr><th>Shop</th><th>Price</th><th>Stock</th><th>Condition</th><th>Checked</th><th></th></tr></thead>
+  <tbody>
+  {% for offer in offers %}
+    <tr>
+      <td>{{ offer.shop_product.shop.name }}</td>
+      <td>¥{{ offer.price_jpy }}</td>
+      <td>
+        {{ offer.get_stock_status_display }}
+        {% if offer.stock_kind == "exact" %}({{ offer.stock_quantity }}){% else %}<span class="pill">{{ offer.stock_kind }}</span>{% endif %}
+      </td>
+      <td>{{ offer.shop_product.condition_raw|default:"-" }}</td>
+      <td>{{ offer.scraped_at }}</td>
+      <td><a href="{{ offer.shop_product.product_url }}" target="_blank" rel="noreferrer">Open</a></td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="6">No shop offers matched to this card yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

@@ -1,0 +1,24 @@
+{% extends "aggregator/base.html" %}
+{% block content %}
+<h1>Card search</h1>
+<form method="get">
+  <input name="q" value="{{ query }}" placeholder="Card number, name, set, rarity" size="44">
+  <button>Search</button>
+</form>
+<table>
+  <thead><tr><th>Card</th><th>Name</th><th>Set</th><th>Rarity</th></tr></thead>
+  <tbody>
+  {% for card in cards %}
+    <tr>
+      <td><a href="/cards/{{ card.id }}/">{{ card.card_number_raw }}</a></td>
+      <td>{{ card.name_jp }}</td>
+      <td>{{ card.set_name }} <span class="muted">{{ card.set_code }}</span></td>
+      <td>{{ card.rarity }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="4">No cards found. Import a catalogue first.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
