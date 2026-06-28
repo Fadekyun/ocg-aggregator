@@ -5,7 +5,7 @@ import pytest
 
 from aggregator.adapters.base import AdapterRunResult, generic_product_blocks, parse_purchase_limit
 from aggregator.adapters.shops import CardLaboAdapter, DragonStarAdapter, ManzokuyaAdapter, Net193Adapter
-from aggregator.models import CanonicalCard, CurrentOffer, Shop, ShopProduct
+from aggregator.models import CanonicalCard, CurrentOffer, OfferHistory, Shop, ShopProduct
 from aggregator.services.catalog import import_catalog
 from aggregator.services.normalization import normalize_card_number
 from aggregator.services.scraping import due_shops
@@ -314,6 +314,51 @@ def test_fewest_shops_mode_can_prefer_one_store(tmp_path):
     assert {group["shop"].slug for group in cheapest["groups"]} == {"a", "b"}
     assert fewest["grand_total"] == 200
     assert [group["shop"].slug for group in fewest["groups"]] == ["b"]
+
+
+@pytest.mark.django_db
+def test_search_shows_current_buyable_offer_summary(client, tmp_path):
+    path = tmp_path / "cards.json"
+    path.write_text(
+        json.dumps({"BP05": [{"card_number": "PL!N-bp5-007-N", "name": "テスト", "rarity": "N"}]}),
+        encoding="utf-8",
+    )
+    import_catalog(path)
+    card = CanonicalCard.objects.get()
+    shop = Shop.objects.create(slug="shop", name="Shop", base_domain="example.com")
+    create_offer(card, shop, "shop-1", 120, stock=3)
+
+    response = client.get("/", {"q": "bp5-007"})
+
+    assert response.status_code == 200
+    assert "from ¥120 at 1 shop" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_card_detail_shows_offer_history(client, tmp_path):
+    path = tmp_path / "cards.json"
+    path.write_text(
+        json.dumps({"BP05": [{"card_number": "PL!N-bp5-007-N", "name": "テスト", "rarity": "N"}]}),
+        encoding="utf-8",
+    )
+    import_catalog(path)
+    card = CanonicalCard.objects.get()
+    shop = Shop.objects.create(slug="shop", name="Shop", base_domain="example.com")
+    offer = create_offer(card, shop, "shop-1", 120, stock=3)
+    OfferHistory.objects.create(
+        shop_product=offer.shop_product,
+        price_jpy=120,
+        stock_quantity=3,
+        stock_status=CurrentOffer.STOCK_AVAILABLE,
+        stock_kind=CurrentOffer.KIND_EXACT,
+    )
+
+    response = client.get(f"/cards/{card.id}/")
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Recent price history" in body
+    assert "¥120" in body
 
 
 @pytest.mark.django_db

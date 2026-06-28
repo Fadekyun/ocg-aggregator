@@ -6,7 +6,7 @@
   <button>Search</button>
 </form>
 <table>
-  <thead><tr><th>Card</th><th>Name</th><th>Set</th><th>Rarity</th></tr></thead>
+  <thead><tr><th>Card</th><th>Name</th><th>Set</th><th>Rarity</th><th>Buyable now</th><th>Last checked</th></tr></thead>
   <tbody>
   {% for card in cards %}
     <tr>
@@ -14,11 +14,18 @@
       <td>{{ card.name_jp }}</td>
       <td>{{ card.set_name }} <span class="muted">{{ card.set_code }}</span></td>
       <td>{{ card.rarity }}</td>
+      <td>
+        {% if card.buyable_shop_count %}
+          from ¥{{ card.cheapest_buyable_price }} at {{ card.buyable_shop_count }} shop{{ card.buyable_shop_count|pluralize }}
+        {% else %}
+          <span class="muted">No current buyable offer</span>
+        {% endif %}
+      </td>
+      <td>{{ card.last_offer_at|default:"-" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="4">No cards found. Import a catalogue first.</td></tr>
+    <tr><td colspan="6">No cards found. Import a catalogue first.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 {% endblock %}
-

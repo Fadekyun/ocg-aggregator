@@ -3,13 +3,19 @@
 <h1>Status</h1>
 <h2>Shops</h2>
 <table>
-<tr><th>Shop</th><th>Enabled</th><th>Implemented</th><th>Last success</th><th>Last failure</th><th>Shipping</th></tr>
-{% for shop in shops %}
+<tr><th>Shop</th><th>Health</th><th>Products</th><th>Matched</th><th>Buyable offers</th><th>Last success</th><th>Last failure</th><th>Shipping</th></tr>
+{% for row in shop_rows %}
+{% with shop=row.shop %}
 <tr>
-  <td>{{ shop.name }}</td><td>{{ shop.enabled }}</td><td>{{ shop.implemented }}</td>
+  <td>{{ shop.name }}</td>
+  <td>{{ row.health }}</td>
+  <td>{{ shop.product_count }}</td>
+  <td>{{ shop.matched_count }}</td>
+  <td>{{ shop.available_offer_count }}</td>
   <td>{{ shop.last_success_at|default:"-" }}</td><td>{{ shop.last_failure_at|default:"-" }}</td>
   <td>¥{{ shop.shipping_base_jpy }}</td>
 </tr>
+{% endwith %}
 {% endfor %}
 </table>
 <h2>Recent runs</h2>
@@ -23,4 +29,3 @@
 {% endfor %}
 </table>
 {% endblock %}
-
