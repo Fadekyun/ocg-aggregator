@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from typing import Iterable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urldefrag
 import re
 import time
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from django.conf import settings
 
 from aggregator.models import CurrentOffer
@@ -52,6 +52,8 @@ class ShopAdapter:
     slug = ""
     parser_version = "1"
     listing_urls: list[str] = []
+    follow_pagination = True
+    max_pages = 60
 
     def __init__(self, shop):
         self.shop = shop
@@ -64,20 +66,48 @@ class ShopAdapter:
     def close(self):
         self.client.close()
 
+    def fetch_html(self, url: str) -> tuple[int, str, str | None]:
+        response = self.client.get(url)
+        retry_after = response.headers.get("Retry-After")
+        return response.status_code, response.text, retry_after
+
+    def pagination_urls(self, html: str, source_url: str) -> list[str]:
+        if not self.follow_pagination:
+            return []
+        soup = BeautifulSoup(html, "html.parser")
+        urls = []
+        for link in soup.find_all("a", href=True):
+            href = urljoin(source_url, link["href"])
+            href, _fragment = urldefrag(href)
+            if href == source_url:
+                continue
+            if "pageno=" not in href and "page=" not in href:
+                continue
+            urls.append(href)
+        return sorted(set(urls))
+
     def discover_products(self) -> AdapterRunResult:
         result = AdapterRunResult()
-        for url in self.listing_urls:
+        queue = list(self.listing_urls)
+        seen_urls: set[str] = set()
+        while queue and len(seen_urls) < self.max_pages:
+            url = queue.pop(0)
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
             try:
-                response = self.client.get(url)
+                status_code, html, retry_after = self.fetch_html(url)
                 result.pages_requested += 1
-                if response.status_code >= 400:
+                if status_code >= 400:
                     result.http_errors += 1
-                    result.errors.append(f"{url} returned {response.status_code}")
-                    retry_after = response.headers.get("Retry-After")
-                    if response.status_code == 429 and retry_after and retry_after.isdigit():
+                    result.errors.append(f"{url} returned {status_code}")
+                    if status_code == 429 and retry_after and retry_after.isdigit():
                         time.sleep(min(int(retry_after), 60))
                     continue
-                result.offers.extend(self.parse_listing(response.text, url))
+                result.offers.extend(self.parse_listing(html, url))
+                for next_url in self.pagination_urls(html, url):
+                    if next_url not in seen_urls and next_url not in queue:
+                        queue.append(next_url)
             except httpx.HTTPError as exc:
                 result.http_errors += 1
                 result.errors.append(str(exc))
@@ -103,8 +133,16 @@ class ShopAdapter:
 
 PRICE_RE = re.compile(r"([0-9０-９,，]+)\s*円|[￥¥]\s*([0-9０-９,，]+)")
 CARD_CODE_RE = re.compile(
-    r"(?:PL|LL)[!！\sA-Za-z0-9_\-＋+]+(?:SEC|SECE|SECL|LLE|PE[+＋]?|P[+＋]|RM|R[+＋]|PR|SD|L[+＋]|L|R|N)"
+    r"(?:(?:LL[-ー])?PL[!！]?|LL[-ー])[A-Za-z0-9_\-＋+ ]{3,80}",
+    re.I,
 )
+STRICT_CARD_CODE_RE = re.compile(
+    r"(?:(?:LL[-ー])?PL[!！]?|LL[-ー])[A-Za-z0-9_\-＋+ ]*"
+    r"(?:SECE|SECL|SECS|SEC|SRE|LLE|PE[+＋]?|P[+＋]?|RM|R[+＋]?|PR|SD|L[+＋]?|N)"
+    r"(?=$|[^A-Za-z0-9＋+])",
+    re.I,
+)
+BRACKET_CODE_RE = re.compile(r"[【\[]\s*([^【】\[\]]*PL[!！]?[A-Za-z0-9_\-＋+ ]+)\s*[】\]]", re.I)
 JP_INT_TABLE = str.maketrans("０１２３４５６７８９", "0123456789")
 PURCHASE_LIMIT_RE = re.compile(r"(?:お一人様|購入制限|購入上限|制限|上限)[:：]?\s*([0-9０-９]+)\s*(?:枚|点|個)?")
 CONDITION_RE = re.compile(r"(?:状態\s*[A-ZＡ-Ｚ]|美品|プレイ用|中古|NM)", re.I)
@@ -119,8 +157,19 @@ def parse_price(text: str) -> int | None:
 
 
 def find_card_code(text: str) -> str:
-    match = CARD_CODE_RE.search(text)
-    return match.group(0).strip() if match else ""
+    bracket_match = BRACKET_CODE_RE.search(text)
+    if bracket_match:
+        inner = bracket_match.group(1).strip()
+        strict_inner = STRICT_CARD_CODE_RE.search(inner)
+        if strict_inner:
+            return strict_inner.group(0).strip()
+        if CARD_CODE_RE.search(inner):
+            return inner
+    match = STRICT_CARD_CODE_RE.search(text) or CARD_CODE_RE.search(text)
+    if not match:
+        return ""
+    value = match.group(0).strip()
+    return re.sub(r"\s+[0-9０-９,，]+$", "", value).strip()
 
 
 def parse_purchase_limit(text: str) -> int | None:
@@ -153,7 +202,7 @@ def text_stock(text: str) -> tuple[str, str, int | None]:
 
 def generic_product_blocks(html: str, source_url: str, base_url: str) -> list[ParsedOffer]:
     soup = BeautifulSoup(html, "html.parser")
-    blocks = soup.select("[data-product-id], .product, .item, li, article")
+    blocks = soup.select("[data-product-id], .ec-shelfGrid__item, .product-card-wrapper, .product, .item, li, article")
     offers: list[ParsedOffer] = []
     for index, block in enumerate(blocks):
         text = " ".join(block.get_text(" ", strip=True).split())
@@ -179,6 +228,40 @@ def generic_product_blocks(html: str, source_url: str, base_url: str) -> list[Pa
                 stock_quantity=qty,
                 condition_raw=condition_raw,
                 purchase_limit=purchase_limit,
+            )
+        )
+    return offers
+
+
+def eccube_shelf_blocks(html: str, source_url: str, base_url: str, default_binary_available: bool = False) -> list[ParsedOffer]:
+    soup = BeautifulSoup(html, "html.parser")
+    offers: list[ParsedOffer] = []
+    for index, block in enumerate(soup.select(".ec-shelfGrid__item")):
+        visible_text = " ".join(block.get_text(" ", strip=True).split())
+        comments_text = " ".join(str(c) for c in block.find_all(string=lambda x: isinstance(x, Comment)))
+        text = " ".join((visible_text, comments_text)).strip()
+        code = find_card_code(text)
+        price = parse_price(text)
+        if not code or price is None:
+            continue
+        link = block.find("a", href=True)
+        url = urljoin(base_url or source_url, link["href"]) if link else source_url
+        key = re.sub(r"\D+", "", url.rsplit("/", 1)[-1]) or url.rsplit("/", 1)[-1] or f"row-{index}"
+        status, kind, qty = text_stock(text)
+        if default_binary_available and status == CurrentOffer.STOCK_UNKNOWN:
+            status, kind, qty = CurrentOffer.STOCK_AVAILABLE, CurrentOffer.KIND_BINARY, None
+        offers.append(
+            ParsedOffer(
+                shop_product_key=str(key),
+                product_url=url,
+                title_raw=visible_text[:500],
+                card_code_raw=code,
+                price_jpy=price,
+                stock_status=status,
+                stock_kind=kind,
+                stock_quantity=qty,
+                condition_raw=parse_condition(text),
+                purchase_limit=parse_purchase_limit(text),
             )
         )
     return offers
