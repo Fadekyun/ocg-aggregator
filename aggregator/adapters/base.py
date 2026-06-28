@@ -138,7 +138,7 @@ CARD_CODE_RE = re.compile(
 )
 STRICT_CARD_CODE_RE = re.compile(
     r"(?:(?:LL[-ー])?PL[!！]?|LL[-ー])[A-Za-z0-9_\-＋+ ]*"
-    r"(?:SECE|SECL|SECS|SEC|SRE|LLE|PE[+＋]?|P[+＋]?|RM|R[+＋]?|PR|SD|L[+＋]?|N)"
+    r"(?:SECE|SECL|SECS|SEC|SRE|LLE|PE[+＋]?|P[+＋]?|RM|R[+＋]?|PR|SD|CL|L[+＋]?|N)"
     r"(?=$|[^A-Za-z0-9＋+])",
     re.I,
 )
@@ -169,7 +169,10 @@ def find_card_code(text: str) -> str:
     if not match:
         return ""
     value = match.group(0).strip()
-    return re.sub(r"\s+[0-9０-９,，]+$", "", value).strip()
+    if " " in value:
+        value = value.split()[0]
+    value = re.sub(r"\s+[0-9０-９,，]+$", "", value).strip()
+    return re.sub(r"^LL[-ー](PL[!！]?)", r"\1", value, flags=re.I)
 
 
 def parse_purchase_limit(text: str) -> int | None:
