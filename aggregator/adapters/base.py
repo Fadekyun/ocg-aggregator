@@ -102,7 +102,12 @@ class ShopAdapter:
 
 
 PRICE_RE = re.compile(r"([0-9０-９,，]+)\s*円|[￥¥]\s*([0-9０-９,，]+)")
-CARD_CODE_RE = re.compile(r"(?:PL|LL)[!！\sA-Za-z0-9_\-＋+]+(?:SEC|SECE|SECL|LLE|PE\+|PE|P\+|RM|R\+|PR|SD|L\+|L|R|N)")
+CARD_CODE_RE = re.compile(
+    r"(?:PL|LL)[!！\sA-Za-z0-9_\-＋+]+(?:SEC|SECE|SECL|LLE|PE[+＋]?|P[+＋]|RM|R[+＋]|PR|SD|L[+＋]|L|R|N)"
+)
+JP_INT_TABLE = str.maketrans("０１２３４５６７８９", "0123456789")
+PURCHASE_LIMIT_RE = re.compile(r"(?:お一人様|購入制限|購入上限|制限|上限)[:：]?\s*([0-9０-９]+)\s*(?:枚|点|個)?")
+CONDITION_RE = re.compile(r"(?:状態\s*[A-ZＡ-Ｚ]|美品|プレイ用|中古|NM)", re.I)
 
 
 def parse_price(text: str) -> int | None:
@@ -118,13 +123,28 @@ def find_card_code(text: str) -> str:
     return match.group(0).strip() if match else ""
 
 
+def parse_purchase_limit(text: str) -> int | None:
+    match = PURCHASE_LIMIT_RE.search(text)
+    if not match:
+        return None
+    return int(match.group(1).translate(JP_INT_TABLE))
+
+
+def parse_condition(text: str) -> str:
+    match = CONDITION_RE.search(text)
+    return match.group(0).strip() if match else ""
+
+
 def text_stock(text: str) -> tuple[str, str, int | None]:
     if re.search(r"SOLD\s*OUT|売り切れ|品切れ|在庫なし", text, re.I):
         return CurrentOffer.STOCK_SOLD_OUT, CurrentOffer.KIND_EXACT, 0
-    qty_match = re.search(r"在庫[:：]?\s*([0-9０-９]+)|([0-9０-９]+)\s*(?:個|枚)", text)
+    qty_match = re.search(
+        r"(?:在庫(?:数)?|残り|残数)[:：]?\s*([0-9０-９]+)\s*(?:個|枚|点)?",
+        text,
+    )
     if qty_match:
-        raw = next(group for group in qty_match.groups() if group)
-        qty = int(raw.translate(str.maketrans("０１２３４５６７８９", "0123456789")))
+        raw = qty_match.group(1)
+        qty = int(raw.translate(JP_INT_TABLE))
         return (CurrentOffer.STOCK_AVAILABLE if qty > 0 else CurrentOffer.STOCK_SOLD_OUT), CurrentOffer.KIND_EXACT, qty
     if "◯" in text or "○" in text or re.search(r"カートに入れる|在庫あり|購入", text):
         return CurrentOffer.STOCK_AVAILABLE, CurrentOffer.KIND_BINARY, None
@@ -145,6 +165,8 @@ def generic_product_blocks(html: str, source_url: str, base_url: str) -> list[Pa
         url = urljoin(base_url or source_url, link["href"]) if link else source_url
         key = block.get("data-product-id") or url.rsplit("/", 1)[-1] or f"row-{index}"
         status, kind, qty = text_stock(text)
+        purchase_limit = parse_purchase_limit(text)
+        condition_raw = parse_condition(text)
         offers.append(
             ParsedOffer(
                 shop_product_key=str(key),
@@ -155,6 +177,8 @@ def generic_product_blocks(html: str, source_url: str, base_url: str) -> list[Pa
                 stock_status=status,
                 stock_kind=kind,
                 stock_quantity=qty,
+                condition_raw=condition_raw,
+                purchase_limit=purchase_limit,
             )
         )
     return offers
