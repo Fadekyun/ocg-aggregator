@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import connection
 from django.db.models import Count, Max, Min, Q, Sum
 from django.http import JsonResponse
@@ -42,39 +43,44 @@ def search(request):
     base_query = CanonicalCard.objects.filter(active=True)
 
     if query:
-        cards = base_query.filter(
+        cards_query = base_query.filter(
             Q(card_number_raw__icontains=query)
             | Q(name_jp__icontains=query)
             | Q(name_en__icontains=query)
             | Q(set_name__icontains=query)
             | Q(rarity__icontains=query)
         )
-        limit = 50
     else:
-        cards = base_query.order_by("-last_imported_at")
-        limit = 20
+        cards_query = base_query.order_by("-last_imported_at")
     if selected_set:
-        cards = cards.filter(set_code=selected_set)
+        cards_query = cards_query.filter(set_code=selected_set)
     if selected_rarity:
-        cards = cards.filter(rarity=selected_rarity)
+        cards_query = cards_query.filter(rarity=selected_rarity)
     if selected_shop:
-        cards = cards.filter(shopproduct__shop__slug=selected_shop)
+        cards_query = cards_query.filter(shopproduct__shop__slug=selected_shop)
     if buyable_only:
-        cards = cards.filter(BUYABLE_OFFER_FILTER)
+        cards_query = cards_query.filter(BUYABLE_OFFER_FILTER)
 
-    cards = cards.annotate(
+    cards_query = cards_query.annotate(
         cheapest_buyable_price=Min("shopproduct__current_offer__price_jpy", filter=BUYABLE_OFFER_FILTER),
         buyable_shop_count=Count("shopproduct__shop", filter=BUYABLE_OFFER_FILTER, distinct=True),
         known_stock=Sum("shopproduct__current_offer__stock_quantity", filter=BUYABLE_OFFER_FILTER),
         last_offer_at=Max("shopproduct__current_offer__scraped_at"),
-    ).distinct()[:limit]
+    ).distinct()
+    paginator = Paginator(cards_query, 60)
+    page_obj = paginator.get_page(request.GET.get("page") or 1)
+    query_params = request.GET.copy()
+    query_params.pop("page", None)
 
     enabled_shops = list(Shop.objects.filter(enabled=True, implemented=True).order_by("priority", "name"))
     stale_shops = [shop for shop in enabled_shops if shop_health(shop, now) == "Stale" or not shop.last_success_at]
     buyable_cards = CanonicalCard.objects.filter(active=True).filter(BUYABLE_OFFER_FILTER).distinct().count()
     context = {
         "query": query,
-        "cards": cards,
+        "cards": page_obj.object_list,
+        "page_obj": page_obj,
+        "result_count": paginator.count,
+        "query_string": query_params.urlencode(),
         "selected_set": selected_set,
         "selected_rarity": selected_rarity,
         "selected_shop": selected_shop,

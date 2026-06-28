@@ -55,7 +55,10 @@
   </div>
 </form>
 
-<h2>Market</h2>
+<div class="section-row">
+  <h2>Market</h2>
+  <span class="muted">{{ result_count }} cards</span>
+</div>
 <table>
   <thead><tr><th>Card</th><th>Set</th><th>Rarity</th><th>Best Ask</th><th>Shops</th><th>Known Stock</th><th>Last Checked</th></tr></thead>
   <tbody>
@@ -100,4 +103,20 @@
   {% endfor %}
   </tbody>
 </table>
+
+{% if page_obj.paginator.num_pages > 1 %}
+  <nav class="pager" aria-label="Market pages">
+    {% if page_obj.has_previous %}
+      <a class="button secondary" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+    {% else %}
+      <span class="button secondary disabled">Previous</span>
+    {% endif %}
+    <span class="pager-current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a class="button secondary" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+    {% else %}
+      <span class="button secondary disabled">Next</span>
+    {% endif %}
+  </nav>
+{% endif %}
 {% endblock %}
