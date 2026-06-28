@@ -7,7 +7,7 @@ from aggregator.models import CanonicalCard, CurrentOffer, Shop, ShopProduct
 from aggregator.services.catalog import import_catalog
 from aggregator.services.normalization import normalize_card_number
 from aggregator.services.scraping import due_shops
-from aggregator.services.wanted import parse_wanted_text, simple_plan
+from aggregator.services.wanted import MODE_FEWEST_SHOPS, optimize_plan, parse_wanted_text, simple_plan
 from django.utils import timezone
 
 
@@ -106,6 +106,87 @@ def test_simple_plan_uses_exact_stock(tmp_path):
 
     assert plan["grand_total"] == 450
     assert plan["unfulfilled"][0].quantity == 1
+
+
+def create_offer(card, shop, key, price, stock=10):
+    product = ShopProduct.objects.create(
+        shop=shop,
+        shop_product_key=key,
+        product_url=f"https://example.com/{key}",
+        card_code_raw=card.card_number_raw,
+        card_code_normalized=card.card_number_normalized,
+        canonical_card=card,
+        match_status="auto",
+    )
+    return CurrentOffer.objects.create(
+        shop_product=product,
+        price_jpy=price,
+        stock_status=CurrentOffer.STOCK_AVAILABLE,
+        stock_kind=CurrentOffer.KIND_EXACT,
+        stock_quantity=stock,
+    )
+
+
+@pytest.mark.django_db
+def test_optimizer_includes_shipping_when_selecting_shop(tmp_path):
+    path = tmp_path / "cards.json"
+    path.write_text(
+        json.dumps(
+            {
+                "BP05": [
+                    {"card_number": "PL!N-bp5-001-N", "name": "Card 1", "rarity": "N"},
+                    {"card_number": "PL!N-bp5-002-N", "name": "Card 2", "rarity": "N"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    import_catalog(path)
+    card1 = CanonicalCard.objects.get(card_number_raw="PL!N-bp5-001-N")
+    card2 = CanonicalCard.objects.get(card_number_raw="PL!N-bp5-002-N")
+    shop_a = Shop.objects.create(slug="a", name="A", base_domain="a.example", shipping_base_jpy=250)
+    shop_b = Shop.objects.create(slug="b", name="B", base_domain="b.example", shipping_base_jpy=250)
+    create_offer(card1, shop_a, "a-1", 80)
+    create_offer(card1, shop_b, "b-1", 100)
+    create_offer(card2, shop_b, "b-2", 100)
+
+    plan = optimize_plan(parse_wanted_text("PL!N-bp5-001-N x1\nPL!N-bp5-002-N x1"))
+
+    assert plan["grand_total"] == 450
+    assert [group["shop"].slug for group in plan["groups"]] == ["b"]
+
+
+@pytest.mark.django_db
+def test_fewest_shops_mode_can_prefer_one_store(tmp_path):
+    path = tmp_path / "cards.json"
+    path.write_text(
+        json.dumps(
+            {
+                "BP05": [
+                    {"card_number": "PL!N-bp5-001-N", "name": "Card 1", "rarity": "N"},
+                    {"card_number": "PL!N-bp5-002-N", "name": "Card 2", "rarity": "N"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    import_catalog(path)
+    card1 = CanonicalCard.objects.get(card_number_raw="PL!N-bp5-001-N")
+    card2 = CanonicalCard.objects.get(card_number_raw="PL!N-bp5-002-N")
+    shop_a = Shop.objects.create(slug="a", name="A", base_domain="a.example")
+    shop_b = Shop.objects.create(slug="b", name="B", base_domain="b.example")
+    create_offer(card1, shop_a, "a-1", 50)
+    create_offer(card1, shop_b, "b-1", 100)
+    create_offer(card2, shop_b, "b-2", 100)
+    lines = parse_wanted_text("PL!N-bp5-001-N x1\nPL!N-bp5-002-N x1")
+
+    cheapest = optimize_plan(lines)
+    fewest = optimize_plan(lines, MODE_FEWEST_SHOPS)
+
+    assert cheapest["grand_total"] == 150
+    assert {group["shop"].slug for group in cheapest["groups"]} == {"a", "b"}
+    assert fewest["grand_total"] == 200
+    assert [group["shop"].slug for group in fewest["groups"]] == ["b"]
 
 
 @pytest.mark.django_db

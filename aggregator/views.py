@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import CanonicalCard, CurrentOffer, ScrapeRun, Shop
-from .services.wanted import parse_wanted_text, simple_plan
+from .services.wanted import MODE_BALANCED, MODE_CHEAPEST, MODE_FEWEST_SHOPS, optimize_plan, parse_wanted_text
 
 
 def search(request):
@@ -36,11 +36,26 @@ def wanted_list(request):
     lines = []
     plan = None
     text = ""
+    mode = request.POST.get("mode", MODE_CHEAPEST) if request.method == "POST" else MODE_CHEAPEST
     if request.method == "POST":
         text = request.POST.get("wanted_text", "")
         lines = parse_wanted_text(text)
-        plan = simple_plan(lines)
-    return render(request, "aggregator/wanted.html", {"text": text, "lines": lines, "plan": plan})
+        plan = optimize_plan(lines, mode)
+    return render(
+        request,
+        "aggregator/wanted.html",
+        {
+            "text": text,
+            "lines": lines,
+            "plan": plan,
+            "mode": mode,
+            "modes": [
+                (MODE_CHEAPEST, "Cheapest total"),
+                (MODE_FEWEST_SHOPS, "Fewest shops"),
+                (MODE_BALANCED, "Balanced"),
+            ],
+        },
+    )
 
 
 def status(request):
@@ -79,4 +94,3 @@ def login_view(request):
             messages.success(request, "Logged in.")
             return redirect("search")
     return render(request, "aggregator/login.html")
-

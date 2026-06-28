@@ -98,6 +98,16 @@ docker compose exec app python manage.py scrape_all
 
 The scraper publishes transactionally. Failed or suspicious runs keep the last successful offers and mark the shop stale.
 
+## Wanted-list optimizer
+
+The wanted-list page uses OR-Tools CP-SAT and supports three modes:
+
+- Cheapest total: minimize item cost plus estimated shipping.
+- Fewest shops: strongly prefer fewer stores while still fulfilling cards where possible.
+- Balanced: include a modest per-shop penalty so a tiny item-price saving does not add a whole extra store too easily.
+
+Exact stock and purchase limits are hard constraints. Binary stock can be selected, but the plan shows a warning because the exact quantity is unknown.
+
 ## Health
 
 ```bash
@@ -124,4 +134,3 @@ python manage.py migrate
 python manage.py seed_shops
 pytest
 ```
-

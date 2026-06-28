@@ -4,6 +4,15 @@
 <form method="post">
   {% csrf_token %}
   <textarea name="wanted_text" rows="9" style="width:100%" placeholder="PL!N-bp5-007-N x4&#10;PL!N-bp5-007-N,4">{{ text }}</textarea>
+  <p>
+    <label>Optimizer mode
+      <select name="mode">
+        {% for value,label in modes %}
+          <option value="{{ value }}" {% if value == mode %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </p>
   <p><button>Optimize from latest scrape</button></p>
 </form>
 {% if lines %}
@@ -40,4 +49,3 @@
 {% endif %}
 {% endif %}
 {% endblock %}
-
