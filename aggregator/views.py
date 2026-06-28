@@ -66,7 +66,7 @@ def search(request):
         buyable_shop_count=Count("shopproduct__shop", filter=BUYABLE_OFFER_FILTER, distinct=True),
         known_stock=Sum("shopproduct__current_offer__stock_quantity", filter=BUYABLE_OFFER_FILTER),
         last_offer_at=Max("shopproduct__current_offer__scraped_at"),
-    ).distinct()
+    ).distinct().order_by("source_expansion", "card_number_normalized", "id")
     paginator = Paginator(cards_query, 60)
     page_obj = paginator.get_page(request.GET.get("page") or 1)
     query_params = request.GET.copy()
