@@ -1,30 +1,102 @@
 {% extends "aggregator/base.html" %}
 {% block content %}
-<h1>Card search</h1>
-<form method="get">
-  <input name="q" value="{{ query }}" placeholder="Card number, name, set, rarity" size="44">
-  <button>Search</button>
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Love Live! OCG market tracker</p>
+    <h1>Card Market</h1>
+  </div>
+</div>
+
+<section class="stat-grid">
+  <div class="stat"><span>Catalogue</span><strong>{{ stats.cards }}</strong></div>
+  <div class="stat"><span>Buyable Cards</span><strong>{{ stats.buyable_cards }}</strong></div>
+  <div class="stat"><span>Active Shops</span><strong>{{ stats.active_shops }}</strong></div>
+  <div class="stat"><span>Stale Shops</span><strong class="{% if stats.stale_shops %}warning{% endif %}">{{ stats.stale_shops }}</strong></div>
+</section>
+
+<form method="get" class="panel alt">
+  <div class="filter-grid">
+    <div class="field">
+      <label>Search</label>
+      <input name="q" value="{{ query }}" placeholder="Card number, Japanese name, English name, set, rarity">
+    </div>
+    <div class="field">
+      <label>Set</label>
+      <select name="set">
+        <option value="">All sets</option>
+        {% for code,name in sets %}
+          <option value="{{ code }}" {% if selected_set == code %}selected{% endif %}>{{ code }}{% if name %} - {{ name }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Rarity</label>
+      <select name="rarity">
+        <option value="">All rarities</option>
+        {% for rarity in rarities %}
+          <option value="{{ rarity }}" {% if selected_rarity == rarity %}selected{% endif %}>{{ rarity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Shop</label>
+      <select name="shop">
+        <option value="">All shops</option>
+        {% for shop in shops %}
+          <option value="{{ shop.slug }}" {% if selected_shop == shop.slug %}selected{% endif %}>{{ shop.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <label class="check-field">
+      <input type="checkbox" name="buyable" value="1" {% if buyable_only %}checked{% endif %}>
+      Buyable only
+    </label>
+    <button>Apply</button>
+  </div>
 </form>
+
+<h2>Market</h2>
 <table>
-  <thead><tr><th>Card</th><th>Name</th><th>Set</th><th>Rarity</th><th>Buyable now</th><th>Last checked</th></tr></thead>
+  <thead><tr><th>Card</th><th>Set</th><th>Rarity</th><th>Best Ask</th><th>Shops</th><th>Known Stock</th><th>Last Checked</th></tr></thead>
   <tbody>
   {% for card in cards %}
     <tr>
-      <td><a href="/cards/{{ card.id }}/">{{ card.card_number_raw }}</a></td>
-      <td>{{ card.name_jp }}</td>
-      <td>{{ card.set_name }} <span class="muted">{{ card.set_code }}</span></td>
+      <td>
+        <a class="card-line" href="/cards/{{ card.id }}/">
+          {% if card.image_url %}
+            <img class="thumb" src="{{ card.image_url }}" alt="">
+          {% else %}
+            <span class="thumb placeholder">LL</span>
+          {% endif %}
+          <span>
+            <span class="code">{{ card.card_number_raw }}</span>
+            <span class="sub">{{ card.name_jp|default:card.name_en|default:"Unnamed card" }}</span>
+          </span>
+        </a>
+      </td>
+      <td>{{ card.set_code }} <span class="sub">{{ card.set_name }}</span></td>
       <td>{{ card.rarity }}</td>
       <td>
         {% if card.buyable_shop_count %}
-          from ¥{{ card.cheapest_buyable_price }} at {{ card.buyable_shop_count }} shop{{ card.buyable_shop_count|pluralize }}
+          <span class="price">¥{{ card.cheapest_buyable_price }}</span>
         {% else %}
-          <span class="muted">No current buyable offer</span>
+          <span class="muted">No ask</span>
+        {% endif %}
+      </td>
+      <td>{% if card.buyable_shop_count %}{{ card.buyable_shop_count }}{% else %}<span class="muted">0</span>{% endif %}</td>
+      <td>
+        {% if card.known_stock %}
+          {{ card.known_stock }}
+        {% elif card.buyable_shop_count %}
+          <span class="pill">binary</span>
+        {% else %}
+          <span class="muted">-</span>
         {% endif %}
       </td>
       <td>{{ card.last_offer_at|default:"-" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="6">No cards found. Import a catalogue first.</td></tr>
+    <tr><td colspan="7">No cards found.</td></tr>
   {% endfor %}
   </tbody>
 </table>

@@ -1,20 +1,31 @@
 {% extends "aggregator/base.html" %}
 {% block content %}
-<h1>Wanted list</h1>
-<form method="post">
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Basket optimizer</p>
+    <h1>Wanted List</h1>
+  </div>
+</div>
+
+<form method="post" class="panel alt">
   {% csrf_token %}
-  <textarea name="wanted_text" rows="9" style="width:100%" placeholder="PL!N-bp5-007-N x4&#10;PL!N-bp5-007-N,4">{{ text }}</textarea>
-  <p>
-    <label>Optimizer mode
+  <div class="field">
+    <label>Cards</label>
+    <textarea name="wanted_text" rows="9" placeholder="PL!N-bp5-007-N x4&#10;PL!S-bp4-012-R,2&#10;PL!SP-pb1-001-P+,1,18000">{{ text }}</textarea>
+  </div>
+  <div class="filter-grid" style="grid-template-columns:260px auto;align-items:end;margin-top:12px">
+    <div class="field">
+      <label>Optimizer mode</label>
       <select name="mode">
         {% for value,label in modes %}
           <option value="{{ value }}" {% if value == mode %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-    </label>
-  </p>
-  <p><button>Optimize from latest scrape</button></p>
+    </div>
+    <button>Optimize</button>
+  </div>
 </form>
+
 {% if lines %}
 <h2>Parsed lines</h2>
 <table>
@@ -23,29 +34,64 @@
   <tr>
     <td>{{ line.code }}</td><td>{{ line.quantity }}</td>
     <td>{% if line.card %}<a href="/cards/{{ line.card.id }}/">{{ line.card.card_number_raw }}</a>{% else %}-{% endif %}</td>
-    <td>{{ line.error|default:"Matched" }}</td>
+    <td>{% if line.error %}<span class="pill bad">{{ line.error }}</span>{% else %}<span class="pill good">matched</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table>
 {% endif %}
+
 {% if plan %}
-<h2>Recommended plan</h2>
+<div class="page-head" style="margin-top:28px">
+  <div>
+    <p class="page-kicker">Recommended plan</p>
+    <h2 style="margin:0">Store Allocation</h2>
+  </div>
+  <div class="stat" style="min-width:180px"><span>Grand Total</span><strong>¥{{ plan.grand_total }}</strong></div>
+</div>
 {% for warning in plan.warnings %}<p class="warn">{{ warning }}</p>{% endfor %}
+
+<section class="plan-grid">
 {% for group in plan.groups %}
-  <h3>{{ group.shop.name }}</h3>
-  <ul>
-  {% for item in group.plan_items %}
-    <li>{{ item.line.card.card_number_raw }} x{{ item.quantity }} - ¥{{ item.offer.price_jpy }} each</li>
-  {% endfor %}
-  </ul>
-  <p>Items: ¥{{ group.items_total }} / Shipping: ¥{{ group.shipping }} / Store total: ¥{{ group.store_total }}</p>
+  <article class="offer">
+    <div class="offer-head">
+      <div>
+        <strong>{{ group.shop.name }}</strong>
+        <span class="sub">{{ group.plan_items|length }} line{{ group.plan_items|length|pluralize }}</span>
+      </div>
+      <span class="pill good">¥{{ group.store_total }}</span>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>Card</th><th>Qty</th><th>Each</th></tr></thead>
+      <tbody>
+      {% for item in group.plan_items %}
+        <tr>
+          <td><a href="/cards/{{ item.line.card.id }}/">{{ item.line.card.card_number_raw }}</a></td>
+          <td>{{ item.quantity }}</td>
+          <td>¥{{ item.offer.price_jpy }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="total-bar">
+      <span>Items ¥{{ group.items_total }}</span>
+      <span>Shipping ¥{{ group.shipping }}</span>
+    </div>
+  </article>
 {% empty %}
-  <p>No buyable plan found from current offers.</p>
+  <div class="panel">No buyable plan found from current offers.</div>
 {% endfor %}
-<p><strong>Grand total: ¥{{ plan.grand_total }}</strong></p>
+</section>
+
 {% if plan.unfulfilled %}
 <h3>Unfulfilled</h3>
-<ul>{% for line in plan.unfulfilled %}<li>{{ line.code }} x{{ line.quantity }} - {{ line.error }}</li>{% endfor %}</ul>
+<table>
+  <thead><tr><th>Card</th><th>Qty</th><th>Reason</th></tr></thead>
+  <tbody>
+  {% for line in plan.unfulfilled %}
+    <tr><td>{{ line.code }}</td><td>{{ line.quantity }}</td><td>{{ line.error }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 {% endif %}
 {% endblock %}

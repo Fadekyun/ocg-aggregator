@@ -331,7 +331,36 @@ def test_search_shows_current_buyable_offer_summary(client, tmp_path):
     response = client.get("/", {"q": "bp5-007"})
 
     assert response.status_code == 200
-    assert "from ¥120 at 1 shop" in response.content.decode()
+    body = response.content.decode()
+    assert "Card Market" in body
+    assert "¥120" in body
+    assert "PL!N-bp5-007-N" in body
+
+
+@pytest.mark.django_db
+def test_search_buyable_filter_hides_unstocked_cards(client, tmp_path):
+    path = tmp_path / "cards.json"
+    path.write_text(
+        json.dumps(
+            {
+                "BP05": [
+                    {"card_number": "PL!N-bp5-007-N", "name": "Stocked", "rarity": "N"},
+                    {"card_number": "PL!N-bp5-008-N", "name": "Empty", "rarity": "N"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    import_catalog(path)
+    stocked = CanonicalCard.objects.get(card_number_raw="PL!N-bp5-007-N")
+    shop = Shop.objects.create(slug="shop", name="Shop", base_domain="example.com")
+    create_offer(stocked, shop, "shop-1", 120, stock=3)
+
+    response = client.get("/", {"buyable": "1"})
+
+    body = response.content.decode()
+    assert "PL!N-bp5-007-N" in body
+    assert "PL!N-bp5-008-N" not in body
 
 
 @pytest.mark.django_db

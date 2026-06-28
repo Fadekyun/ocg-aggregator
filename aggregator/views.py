@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.db import connection
-from django.db.models import Count, Max, Min, Q
+from django.db.models import Count, Max, Min, Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -20,10 +20,27 @@ BUYABLE_OFFER_FILTER = Q(
 )
 
 
+def shop_health(shop: Shop, now):
+    if not shop.enabled:
+        return "Disabled"
+    if not shop.implemented:
+        return "Placeholder"
+    if not shop.last_success_at:
+        return "Never succeeded"
+    if (now - shop.last_success_at).total_seconds() > shop.stale_after_minutes * 60:
+        return "Stale"
+    return "Healthy"
+
+
 def search(request):
     query = request.GET.get("q", "").strip()
-    cards = CanonicalCard.objects.none()
+    selected_set = request.GET.get("set", "").strip()
+    selected_rarity = request.GET.get("rarity", "").strip()
+    selected_shop = request.GET.get("shop", "").strip()
+    buyable_only = request.GET.get("buyable") == "1"
+    now = timezone.now()
     base_query = CanonicalCard.objects.filter(active=True)
+
     if query:
         cards = base_query.filter(
             Q(card_number_raw__icontains=query)
@@ -36,12 +53,43 @@ def search(request):
     else:
         cards = base_query.order_by("-last_imported_at")
         limit = 20
+    if selected_set:
+        cards = cards.filter(set_code=selected_set)
+    if selected_rarity:
+        cards = cards.filter(rarity=selected_rarity)
+    if selected_shop:
+        cards = cards.filter(shopproduct__shop__slug=selected_shop)
+    if buyable_only:
+        cards = cards.filter(BUYABLE_OFFER_FILTER)
+
     cards = cards.annotate(
         cheapest_buyable_price=Min("shopproduct__current_offer__price_jpy", filter=BUYABLE_OFFER_FILTER),
         buyable_shop_count=Count("shopproduct__shop", filter=BUYABLE_OFFER_FILTER, distinct=True),
+        known_stock=Sum("shopproduct__current_offer__stock_quantity", filter=BUYABLE_OFFER_FILTER),
         last_offer_at=Max("shopproduct__current_offer__scraped_at"),
     ).distinct()[:limit]
-    return render(request, "aggregator/search.html", {"query": query, "cards": cards})
+
+    enabled_shops = list(Shop.objects.filter(enabled=True, implemented=True).order_by("priority", "name"))
+    stale_shops = [shop for shop in enabled_shops if shop_health(shop, now) == "Stale" or not shop.last_success_at]
+    buyable_cards = CanonicalCard.objects.filter(active=True).filter(BUYABLE_OFFER_FILTER).distinct().count()
+    context = {
+        "query": query,
+        "cards": cards,
+        "selected_set": selected_set,
+        "selected_rarity": selected_rarity,
+        "selected_shop": selected_shop,
+        "buyable_only": buyable_only,
+        "sets": CanonicalCard.objects.filter(active=True).exclude(set_code="").order_by("set_code").values_list("set_code", "set_name").distinct(),
+        "rarities": CanonicalCard.objects.filter(active=True).exclude(rarity="").order_by("rarity").values_list("rarity", flat=True).distinct(),
+        "shops": enabled_shops,
+        "stats": {
+            "cards": CanonicalCard.objects.filter(active=True).count(),
+            "buyable_cards": buyable_cards,
+            "active_shops": len(enabled_shops),
+            "stale_shops": len(stale_shops),
+        },
+    }
+    return render(request, "aggregator/search.html", context)
 
 
 def card_detail(request, card_id: int):
@@ -53,7 +101,19 @@ def card_detail(request, card_id: int):
     history = OfferHistory.objects.select_related("shop_product__shop").filter(
         shop_product__canonical_card=card,
     ).order_by("-observed_at")[:50]
-    return render(request, "aggregator/card_detail.html", {"card": card, "offers": offers, "history": history})
+    buyable_offers = [offer for offer in offers if offer.buyable]
+    exact_stock = sum(offer.stock_quantity or 0 for offer in buyable_offers if offer.stock_kind == CurrentOffer.KIND_EXACT)
+    market = {
+        "cheapest": min((offer.price_jpy for offer in buyable_offers), default=None),
+        "shops": len({offer.shop_product.shop_id for offer in buyable_offers}),
+        "exact_stock": exact_stock,
+        "last_checked": max((offer.scraped_at for offer in offers), default=None),
+    }
+    return render(
+        request,
+        "aggregator/card_detail.html",
+        {"card": card, "offers": offers, "history": history, "market": market},
+    )
 
 
 def wanted_list(request):
@@ -98,16 +158,7 @@ def status(request):
     )
     shop_rows = []
     for shop in shops:
-        if not shop.enabled:
-            health = "Disabled"
-        elif not shop.implemented:
-            health = "Placeholder"
-        elif not shop.last_success_at:
-            health = "Never succeeded"
-        elif (now - shop.last_success_at).total_seconds() > shop.stale_after_minutes * 60:
-            health = "Stale"
-        else:
-            health = "Healthy"
+        health = shop_health(shop, now)
         shop_rows.append({"shop": shop, "health": health})
     runs = ScrapeRun.objects.select_related("shop")[:30]
     return render(request, "aggregator/status.html", {"shop_rows": shop_rows, "runs": runs, "now": now})

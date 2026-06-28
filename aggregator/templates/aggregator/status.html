@@ -1,6 +1,12 @@
 {% extends "aggregator/base.html" %}
 {% block content %}
-<h1>Status</h1>
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Scraper operations</p>
+    <h1>Status</h1>
+  </div>
+</div>
+
 <h2>Shops</h2>
 <table>
 <tr><th>Shop</th><th>Health</th><th>Products</th><th>Matched</th><th>Buyable offers</th><th>Last success</th><th>Last failure</th><th>Shipping</th></tr>
@@ -8,7 +14,15 @@
 {% with shop=row.shop %}
 <tr>
   <td>{{ shop.name }}</td>
-  <td>{{ row.health }}</td>
+  <td>
+    {% if row.health == "Healthy" %}
+      <span class="pill good">{{ row.health }}</span>
+    {% elif row.health == "Disabled" or row.health == "Placeholder" %}
+      <span class="pill">{{ row.health }}</span>
+    {% else %}
+      <span class="pill warn">{{ row.health }}</span>
+    {% endif %}
+  </td>
   <td>{{ shop.product_count }}</td>
   <td>{{ shop.matched_count }}</td>
   <td>{{ shop.available_offer_count }}</td>
@@ -23,7 +37,16 @@
 <tr><th>Started</th><th>Shop</th><th>Status</th><th>Seen</th><th>Updated</th><th>Errors</th></tr>
 {% for run in runs %}
 <tr>
-  <td>{{ run.started_at }}</td><td>{{ run.shop.name }}</td><td>{{ run.status }}</td>
+  <td>{{ run.started_at }}</td><td>{{ run.shop.name }}</td>
+  <td>
+    {% if run.status == "success" %}
+      <span class="pill good">{{ run.status }}</span>
+    {% elif run.status == "failed" %}
+      <span class="pill bad">{{ run.status }}</span>
+    {% else %}
+      <span class="pill">{{ run.status }}</span>
+    {% endif %}
+  </td>
   <td>{{ run.products_seen }}</td><td>{{ run.products_updated }}</td><td>{{ run.error_summary }}</td>
 </tr>
 {% endfor %}
