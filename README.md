@@ -89,6 +89,13 @@ python manage.py scheduler       scrape scheduler
 
 Each enabled shop is checked roughly every six hours. The UI uses the latest successful scrape and does not trigger live shop requests when opened.
 
+This means the search UI answers "can I buy this now?" from stored offers:
+
+- Search results show the cheapest currently buyable offer, shop count, and last checked time.
+- Card detail pages show all matched offers plus recent price and stock history.
+- Binary stock is shown as binary availability, not as an exact quantity.
+- Stale or failed shops keep their last good offers instead of being overwritten as sold out.
+
 Manual commands:
 
 ```bash
@@ -97,6 +104,8 @@ docker compose exec app python manage.py scrape_all
 ```
 
 The scraper publishes transactionally. Failed or suspicious runs keep the last successful offers and mark the shop stale.
+
+The status page at `/status/` shows shop health, product counts, matched counts, buyable offer counts, recent runs, and parse or HTTP errors.
 
 ## Wanted-list optimizer
 
